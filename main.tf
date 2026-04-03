@@ -96,19 +96,19 @@ module "bugaicha-backend" {
 #   key_name = "bugaicha-key"
 # }
 
-#  ## SQS ## 
-#  module "sqs" {
-#     source = "./modules/sqs"
+ ## SQS ## 
+ module "sqs" {
+    source = "./modules/sqs"
 
-#     name                      = "my-app-queue"
-#     create_dlq                = true
-#     max_receive_count         = 3
+    name                      = "bugaicha"
+    create_dlq                = true
+    max_receive_count         = 3
 
-#     tags = {
-#       Environment = "dev"
-#       Project     = "my-app"
-#     }
-#   }
+    tags = {
+      Team        = "bugAiCha"
+      
+    }
+  }
 
 # ##### ECS #### 
 #  module "ecs" {
@@ -196,17 +196,6 @@ module "bugaicha-backend" {
 #  }
 
 
-### ECR ###
-module "ecr-frontend" {
-  source = "./modules/ecr"
-  ecr_repository_name = "ecr-frontend-ap"
-
-}
-
-module "ecr-backend" {
-   source = "./modules/ecr"
-   ecr_repository_name = "ecr-backend-ap"     
-}
 
 
 #### RDS #### 

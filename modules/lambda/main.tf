@@ -75,13 +75,23 @@ resource "aws_security_group" "lambda_sg" {
   })
 }
 
+
+data "archive_file" "dummy_code" {
+  type        = "zip"
+  output_path = "${path.module}/dummy_payload.zip"
+  source {
+    content  = "def handler(event, context):\n    pass"
+    filename = "index.py"
+  }
+}
+
 resource "aws_lambda_function" "this" {
   function_name    = var.function_name
   role             = aws_iam_role.lambda_role.arn
   handler          = var.handler
   runtime          = var.runtime
-  filename         = var.filename
-  source_code_hash = var.source_code_hash
+  filename         = var.filename != null ? var.filename : data.archive_file.dummy_code.output_path
+  source_code_hash = var.source_code_hash != null ? var.source_code_hash : data.archive_file.dummy_code.output_base64sha256
   timeout          = var.timeout
   memory_size      = var.memory_size
 
@@ -101,4 +111,13 @@ resource "aws_lambda_function" "this" {
   }
 
   tags = var.tags
+
+  # Ignore code and layer changes made externally by CI/CD pipelines
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+      layers
+    ]
+  }
 }
