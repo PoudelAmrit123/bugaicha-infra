@@ -58,8 +58,8 @@ variable "enable_dynamodb_policy" {
 
 variable "vpc_config" {
   type = object({
+    vpc_id     = string
     subnet_ids         = list(string)
-    security_group_ids = list(string)
   })
   description = "VPC configuration for the Lambda function"
   default     = null

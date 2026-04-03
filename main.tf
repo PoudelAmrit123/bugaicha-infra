@@ -28,10 +28,6 @@ module "dynamodb" {
     { name = "ticket_id", type = "S" }
   ]
 
-
-
-
-
   point_in_time_recovery_enabled = true
   server_side_encryption_enabled = true
   stream_enabled                 = true
@@ -46,27 +42,46 @@ module "dynamodb" {
   }
 }
 
-## Lambda ##
-module "lambda" {
-  source = "./modules/lambda"
+# Lambda ##
+# module "lambda" {
+#   source = "./modules/lambda"
 
-  function_name          = "bugAiCha-function"
-  role_name              = "bugAiCha-lambda-role"
-  runtime                = "python3.11"
-  handler                = "index.handler"
-  timeout                = 500
-  memory_size            = 128
-  enable_dynamodb_policy = true
+#   function_name          = "bugAiCha-function"
+#   role_name              = "bugAiCha-lambda-role"
+#   runtime                = "python3.11"
+#   handler                = "index.handler"
+#   timeout                = 500
+#   memory_size            = 128
+#   enable_dynamodb_policy = true
 
-  environment_variables = {
-    DYNAMODB_TABLE = module.dynamodb.table_name
-    ENVIRONMENT    = "dev"
-  }
 
-  tags = {
-    Name    = "bugAiCha-lambda"
-    Project = "bugAicha"
-  }
+#   environment_variables = {
+#     DYNAMODB_TABLE = module.dynamodb.table_name
+#     ENVIRONMENT    = "dev"
+#   }
+
+#   vpc_config = {
+#     vpc_id     = module.vpc.vpc_id
+#     subnet_ids         = module.vpc.private_subnet_ids
+#   }
+
+#   tags = {
+#     Name    = "bugAiCha-lambda"
+#     Project = "bugAicha"
+#   }
+# }
+
+## ECR ###
+
+module "bugaicha-frontend" {
+  source = "./modules/ecr"
+  ecr_repository_name = "bugaicha-frontend-app"
+
+}
+
+module "bugaicha-backend" {
+   source = "./modules/ecr"
+   ecr_repository_name = "bugaicha-backend-app"     
 }
 
 ### EC2 ####
@@ -182,16 +197,16 @@ module "lambda" {
 
 
 ### ECR ###
-# module "ecr-frontend" {
-#   source = "./modules/ecr"
-#   ecr_repository_name = "ecr-frontend-ap"
+module "ecr-frontend" {
+  source = "./modules/ecr"
+  ecr_repository_name = "ecr-frontend-ap"
 
-# }
+}
 
-# module "ecr-backend" {
-#    source = "./modules/ecr"
-#    ecr_repository_name = "ecr-backend-ap"     
-# }
+module "ecr-backend" {
+   source = "./modules/ecr"
+   ecr_repository_name = "ecr-backend-ap"     
+}
 
 
 #### RDS #### 
@@ -273,4 +288,3 @@ module "lambda" {
 #     ]
 #   }
 # }
-

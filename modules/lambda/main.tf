@@ -6,7 +6,7 @@ resource "aws_iam_role" "lambda_role" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Principal"
+        Effect = "Allow"
         Principal = {
           Service = "lambda.amazonaws.com"
         }
@@ -21,6 +21,13 @@ resource "aws_iam_role" "lambda_role" {
 # Lambda Basic Execution Policy
 resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  role       = aws_iam_role.lambda_role.name
+}
+
+# Lambda VPC Execution Policy (Required to create network interfaces in the VPC)
+resource "aws_iam_role_policy_attachment" "lambda_vpc_execution" {
+  count      = var.vpc_config != null ? 1 : 0
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
   role       = aws_iam_role.lambda_role.name
 }
 
@@ -49,6 +56,25 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
   })
 }
 
+# Security Group for Lambda
+resource "aws_security_group" "lambda_sg" {
+  count       = var.vpc_config != null ? 1 : 0
+  name        = "${var.function_name}-sg"
+  description = "Security group for Lambda function ${var.function_name}"
+  vpc_id      = var.vpc_config.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.function_name}-sg"
+  })
+}
+
 resource "aws_lambda_function" "this" {
   function_name    = var.function_name
   role             = aws_iam_role.lambda_role.arn
@@ -70,7 +96,7 @@ resource "aws_lambda_function" "this" {
     for_each = var.vpc_config != null ? [var.vpc_config] : []
     content {
       subnet_ids         = vpc_config.value.subnet_ids
-      security_group_ids = vpc_config.value.security_group_ids
+      security_group_ids = [aws_security_group.lambda_sg[0].id]
     }
   }
 
