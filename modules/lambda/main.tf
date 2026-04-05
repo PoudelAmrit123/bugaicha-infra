@@ -120,4 +120,10 @@ resource "aws_lambda_function" "this" {
       layers
     ]
   }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_basic_execution,
+    aws_iam_role_policy_attachment.lambda_vpc_execution,
+    aws_iam_role_policy.lambda_dynamodb_policy
+  ]
 }

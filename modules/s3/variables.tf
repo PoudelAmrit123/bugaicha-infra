@@ -18,7 +18,7 @@ variable "tags" {
 variable "enable_versioning" {
   description = "Enable versioning for the bucket"
   type        = bool
-  default     = true
+  default     = false
 }
 
 # Encryption
@@ -28,11 +28,7 @@ variable "sse_rules" {
     sse_algorithm     = string
     kms_master_key_id = optional(string)
   }))
-  default = [
-    {
-      sse_algorithm = "AES256"
-    }
-  ]
+  default = []
 }
 
 

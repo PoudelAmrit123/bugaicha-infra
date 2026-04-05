@@ -102,6 +102,11 @@ variable "task" {
       value = string
     })), [])
 
+    secrets = optional(list(object({
+      name      = string
+      valueFrom = string
+    })), [])
+
 
   }))
 
@@ -110,6 +115,7 @@ variable "task" {
 variable "target_group_arns" {
   description = "Map of target group ARNs from ALB module"
   type        = map(string)
+  default     = {}
 }
 
 variable "projectName" {
@@ -163,7 +169,50 @@ variable "network_mode" {
 
 }
 
+variable "api_autoscaling_enabled" {
+  description = "Enable ECS service autoscaling for API service only"
+  type        = bool
+  default     = false
+}
 
+variable "api_service_key" {
+  description = "Service key in var.services map that should autoscale"
+  type        = string
+  default     = "api"
+}
 
+variable "api_autoscaling_min_capacity" {
+  description = "Minimum task count for API autoscaling"
+  type        = number
+  default     = 1
+}
 
+variable "api_autoscaling_max_capacity" {
+  description = "Maximum task count for API autoscaling"
+  type        = number
+  default     = 6
+}
 
+variable "api_target_cpu_utilization" {
+  description = "Target average CPU utilization (%) for API autoscaling"
+  type        = number
+  default     = 65
+}
+
+variable "api_target_memory_utilization" {
+  description = "Target average memory utilization (%) for API autoscaling"
+  type        = number
+  default     = 75
+}
+
+variable "api_scale_in_cooldown" {
+  description = "Scale-in cooldown in seconds for API autoscaling"
+  type        = number
+  default     = 120
+}
+
+variable "api_scale_out_cooldown" {
+  description = "Scale-out cooldown in seconds for API autoscaling"
+  type        = number
+  default     = 60
+}

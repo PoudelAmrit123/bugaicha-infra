@@ -1,9 +1,10 @@
 ## VPC
 
 resource "aws_vpc" "vpc" {
-  cidr_block       = var.cidr_block
-  instance_tenancy = "default"
-
+  cidr_block           = var.cidr_block
+  instance_tenancy     = "default"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
   tags = merge(
     local.tags,
     {
@@ -125,15 +126,12 @@ resource "aws_route_table" "private_route_table" {
 
 resource "aws_route" "private_route" {
 
-  for_each = var.enable_nat_gateway ? {
-    for idx, subnet in aws_subnet.private_subnet :
-    idx => subnet
-  } : {}
+  for_each = var.enable_nat_gateway ? aws_route_table.private_route_table : {}
 
-  route_table_id = aws_route_table.private_route_table[each.value.availability_zone].id
+  route_table_id = each.value.id
 
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.nat[each.value.availability_zone].id
+  nat_gateway_id         = aws_nat_gateway.nat[each.key].id
 
 }
 
@@ -142,7 +140,8 @@ resource "aws_route_table_association" "private" {
 
 
 
-  for_each  = var.enable_nat_gateway ? { for idx, s in aws_subnet.private_subnet : idx => s } : {}
+  # Always associate with the private route table unless using nat_instance overrides
+  for_each  = !var.enable_nat_instance ? { for idx, s in aws_subnet.private_subnet : idx => s } : {}
   subnet_id = each.value.id
 
   route_table_id = aws_route_table.private_route_table[each.value.availability_zone].id
@@ -155,6 +154,7 @@ resource "aws_route_table_association" "private" {
 resource "aws_eip" "nat" {
 
   for_each = var.enable_nat_gateway ? { for s in aws_subnet.public_subnet : s.availability_zone => s } : {}
+  domain   = "vpc"
 
 
 
@@ -206,7 +206,7 @@ resource "aws_security_group" "nat" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [for s in aws_subnet.private_subnet : s.cidr_block if s.availability_zone == each.key]
+    cidr_blocks = [var.cidr_block]
   }
 
   egress {
@@ -237,6 +237,12 @@ resource "aws_instance" "nat" {
   source_dest_check           = false
   vpc_security_group_ids      = [aws_security_group.nat[each.key].id]
   associate_public_ip_address = true
+
+  user_data = <<-EOF
+    #!/bin/bash
+    sudo sysctl -w net.ipv4.ip_forward=1
+    sudo iptables -t nat -A POSTROUTING -s ${var.cidr_block} -j MASQUERADE
+  EOF
 
   tags = {
     Name    = "${var.vpc_name}-nat-${each.key}"
@@ -341,4 +347,3 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
     Project = var.vpc_project
   }
 }
-

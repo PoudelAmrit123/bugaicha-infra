@@ -49,7 +49,7 @@ resource "aws_ecs_service" "ecs_service" {
   }
 
   dynamic "load_balancer" {
-    for_each = each.value.enable_alb ? [1] : [1]
+    for_each = each.value.enable_alb ? [1] : []
 
     content {
       target_group_arn = lookup(var.target_group_arns, each.key, null)
@@ -85,6 +85,64 @@ resource "aws_ecs_service" "ecs_service" {
   depends_on = [aws_ecs_cluster.ecs_cluster]
 }
 
+locals {
+  api_autoscaling_services = var.api_autoscaling_enabled && contains(keys(var.services), var.api_service_key) ? {
+    (var.api_service_key) = var.services[var.api_service_key]
+  } : {}
+}
+
+resource "aws_appautoscaling_target" "api_service" {
+  for_each = local.api_autoscaling_services
+
+  service_namespace  = "ecs"
+  scalable_dimension = "ecs:service:DesiredCount"
+  min_capacity       = var.api_autoscaling_min_capacity
+  max_capacity       = var.api_autoscaling_max_capacity
+  resource_id        = "service/${aws_ecs_cluster.ecs_cluster.name}/${aws_ecs_service.ecs_service[each.key].name}"
+
+  depends_on = [aws_ecs_service.ecs_service]
+}
+
+resource "aws_appautoscaling_policy" "api_cpu_target_tracking" {
+  for_each = local.api_autoscaling_services
+
+  name               = "${each.key}-cpu-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.api_service[each.key].resource_id
+  scalable_dimension = aws_appautoscaling_target.api_service[each.key].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.api_service[each.key].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.api_target_cpu_utilization
+    scale_in_cooldown  = var.api_scale_in_cooldown
+    scale_out_cooldown = var.api_scale_out_cooldown
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "api_memory_target_tracking" {
+  for_each = local.api_autoscaling_services
+
+  name               = "${each.key}-memory-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.api_service[each.key].resource_id
+  scalable_dimension = aws_appautoscaling_target.api_service[each.key].scalable_dimension
+  service_namespace  = aws_appautoscaling_target.api_service[each.key].service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.api_target_memory_utilization
+    scale_in_cooldown  = var.api_scale_in_cooldown
+    scale_out_cooldown = var.api_scale_out_cooldown
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+  }
+}
+
 
 ### Task Defination either for the fargate or EC2 service 
 
@@ -104,7 +162,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
     for_each = var.launch_type == "FARGATE" ? [1] : []
     content {
       operating_system_family = "LINUX"
-      cpu_architecture        = "X86_64"
+      cpu_architecture        = "ARM64"
     }
   }
 
@@ -128,6 +186,13 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
         }
       ]
 
+      secrets = [
+        for sec in lookup(each.value, "secrets", []) : {
+          name      = sec.name
+          valueFrom = sec.valueFrom
+        }
+      ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -144,10 +209,10 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
   depends_on = [aws_cloudwatch_log_group.ecs_services]
 }
 
-resource "aws_service_discovery_private_dns_namespace" "service_connect_ns" {
-  name = "${var.ecs_cluster_name}.local"
-  vpc  = var.vpc_id
-}
+# resource "aws_service_discovery_private_dns_namespace" "service_connect_ns" {
+#   name = "${var.ecs_cluster_name}.local"
+#   vpc  = var.vpc_id
+# }
 
 ### Roles 
 ### Task Definiation Role and Task Role. 
@@ -175,6 +240,26 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_role_policy" {
   for_each   = var.task
   role       = aws_iam_role.ecs_task_execution_role[each.key].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_iam_role_policy" "ecs_task_execution_secrets_policy" {
+  for_each = var.task
+  name     = "${each.key}-ecs-task-execution-secrets"
+  role     = aws_iam_role.ecs_task_execution_role[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 
@@ -211,7 +296,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_role_custom_policy" {
 ## Instance Profile
 
 resource "aws_iam_role" "ecs_instance_iam_role" {
-  name = "ecs-instance-role"
+  count = var.launch_type == "EC2" ? 1 : 0
+  name  = "ecs-instance-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -228,16 +314,16 @@ resource "aws_iam_role" "ecs_instance_iam_role" {
 }
 
 
-
 resource "aws_iam_role_policy_attachment" "iam_role_policy_attachment" {
-  role       = aws_iam_role.ecs_instance_iam_role.name
+  count      = var.launch_type == "EC2" ? 1 : 0
+  role       = aws_iam_role.ecs_instance_iam_role[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
 resource "aws_iam_instance_profile" "ecs" {
-  name = "ecs-instance-profile"
-  role = aws_iam_role.ecs_instance_iam_role.name
-
+  count = var.launch_type == "EC2" ? 1 : 0
+  name  = "ecs-instance-profile"
+  role  = aws_iam_role.ecs_instance_iam_role[0].name
 }
 
 ## Launch Type 
@@ -267,7 +353,7 @@ resource "aws_launch_template" "launch_template" {
   ebs_optimized = true
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.ecs.name
+    name = aws_iam_instance_profile.ecs[0].name
   }
 
   image_id = data.aws_ami.ecs[0].id
@@ -401,6 +487,7 @@ resource "aws_ecs_cluster_capacity_providers" "capacity_providers" {
 ### Security Group
 
 resource "aws_security_group" "ec2_instance_sg" {
+  count       = var.launch_type == "EC2" ? 1 : 0
   name        = "${var.ecs_cluster_name}-ec2-instance-sg"
   description = "Security group for ECS EC2 instances"
   vpc_id      = var.vpc_id

@@ -16,6 +16,25 @@ resource "aws_iam_role" "ec2_role" {
   })
 }
 
+resource "aws_iam_role_policy" "chromadb_efs" {
+  name = "chromadb-efs-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "elasticfilesystem:ClientMount",
+        "elasticfilesystem:ClientWrite",
+        "elasticfilesystem:ClientRootAccess",
+        "elasticfilesystem:DescribeFileSystems",
+        "elasticfilesystem:DescribeMountTargets"
+      ]
+      Resource = "*"
+    }]
+  })
+}
 # Attach AWS Managed CloudWatch Policy
 resource "aws_iam_role_policy_attachment" "cw_agent_attach" {
 
@@ -68,6 +87,29 @@ resource "aws_security_group" "ec2_sg" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+  
+  ingress {
+    from_port = 2049
+    to_port   = 2049
+    protocol  = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  
+  }
+
+  ingress {
+    from_port = 8000
+    to_port   = 8000
+    protocol  = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  
+  }
+
+  ingress {
+    from_port = 5432
+    to_port   = 5432
+    protocol  = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  
+  }
+
+
 
   ingress {
     description = "Allow SSH"
